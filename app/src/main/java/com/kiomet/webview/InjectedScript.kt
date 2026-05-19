@@ -9,7 +9,6 @@ object InjectedScript {
 (function() {
     'use strict';
     var BACKEND = 'http://127.0.0.1:9999';
-    var bridgeUrl = 'http://192.168.124.2:9999';
 
     // ===== Logging =====
     function log(msg) { console.log('[KB]', msg); }
@@ -30,7 +29,7 @@ object InjectedScript {
             } else if (ArrayBuffer.isView(data)) {
                 info.hex = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
             }
-            xhrPost(BACKEND + '/data', info);
+            xhrPost('/kiomet/data', info);
             return origSend(data);
         };
 
@@ -38,7 +37,7 @@ object InjectedScript {
         ws.addEventListener('message', function(e) {
             if (e.data instanceof ArrayBuffer) {
                 var u8 = new Uint8Array(e.data);
-                xhrPost(BACKEND + '/data', { dir: 'in', size: u8.length, hex: Array.from(u8.slice(0,64)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join(''), time: Date.now() });
+                xhrPost('/kiomet/data', { dir: 'in', size: u8.length, hex: Array.from(u8.slice(0,64)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join(''), time: Date.now() });
             }
         });
         return ws;
@@ -92,7 +91,7 @@ object InjectedScript {
                     var tx = Math.floor((ndx * 5 - m[2]) / m[0]), ty = Math.floor((ndy * 5 - m[5]) / m[4]);
                     result.towerId = { x: tx, y: ty };
                 }
-                xhrPost(BACKEND + '/click', result);
+                xhrPost('/kiomet/click', result);
             });
             log('Canvas hooked');
         };
@@ -103,7 +102,7 @@ object InjectedScript {
     function xhrPost(url, data) {
         try {
             var x = new XMLHttpRequest();
-            x.open('POST', url, true);
+            x.open('POST', BACKEND + url, true);
             x.setRequestHeader('Content-Type', 'application/json');
             x.send(JSON.stringify(data));
         } catch(e) {}
