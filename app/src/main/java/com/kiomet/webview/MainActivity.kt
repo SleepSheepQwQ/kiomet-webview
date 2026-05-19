@@ -2,8 +2,8 @@ package com.kiomet.webview
 
 import android.os.Bundle
 import android.webkit.*
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
-import androidx.webkit.WebViewClientCompat
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
@@ -28,15 +28,16 @@ class MainActivity : AppCompatActivity() {
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         settings.cacheMode = WebSettings.LOAD_DEFAULT
 
-        webView.webViewClient = object : WebViewClientCompat() {
+        webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
                 view.evaluateJavascript(InjectedScript.CODE, null)
+                Log.i("KB", "Page loaded: $url")
             }
         }
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
-                android.util.Log.i("KB", "${msg.message()} (${msg.sourceId()}:${msg.lineNumber()})")
+                Log.i("KB", "${msg.message()} (${msg.sourceId()}:${msg.lineNumber()})")
                 return true
             }
         }
