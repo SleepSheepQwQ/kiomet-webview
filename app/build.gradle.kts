@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.kiomet.webview"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.kiomet.webview"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
     }
@@ -30,8 +30,8 @@ android {
 }
 
 dependencies {
-    implementation("androidx.webkit:webkit:1.8.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
-    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.webkit:webkit:1.12.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.core:core-ktx:1.15.0")
 }
