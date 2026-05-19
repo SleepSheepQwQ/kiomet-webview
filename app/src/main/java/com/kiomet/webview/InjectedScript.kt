@@ -28,7 +28,7 @@ object InjectedScript {
         if (typeof url !== 'string' || url.indexOf('kiomet') === -1) return ws;
         log('WS: ' + url);
 
-        // Hook send
+        // Hook instance send
         var origSend = ws.send.bind(ws);
         ws.send = function(data) {
             var info = { dir: 'out', size: data.byteLength || data.length || 0, time: Date.now() };
@@ -51,6 +51,22 @@ object InjectedScript {
         return ws;
     };
     window.WebSocket.prototype = OrigWS.prototype;
+
+    // Prototype send hook (catches sends from WASM-initiated WebSockets)
+    if (!OrigWS.prototype.__kbHooked) {
+        OrigWS.prototype.__kbHooked = true;
+        var origProtoSend = OrigWS.prototype.send;
+        OrigWS.prototype.send = function(data) {
+            var info = { dir: 'out', size: data.byteLength || data.length || 0, time: Date.now() };
+            if (data instanceof ArrayBuffer) {
+                info.hex = Array.from(new Uint8Array(data)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+            } else if (ArrayBuffer.isView(data)) {
+                info.hex = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+            }
+            xhrPost('/data', info);
+            return origProtoSend.call(this, data);
+        };
+    }
 
     // ===== Camera matrix capture (WebGL) =====
     var cameraMatrix = null;
