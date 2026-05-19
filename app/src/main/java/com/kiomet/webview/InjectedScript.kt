@@ -8,6 +8,9 @@ object InjectedScript {
     val CODE = """
 (function() {
     'use strict';
+    // Test: verify script runs
+    document.documentElement.style.border = '3px solid red';
+
     var BACKEND = 'http://127.0.0.1:9999';
 
     // ===== Logging =====
