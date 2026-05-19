@@ -72,6 +72,10 @@ class BridgeServer(val port: Int) {
                 }
 
                 when {
+                    path == "/log" && method == "POST" -> {
+                        Log.i("KB", "LOG: $body")
+                        respond(writer, 200, """{"ok":true}""")
+                    }
                     path == "/data" && method == "POST" -> {
                         messages.add(body)
                         Log.i("KB", "DATA: ${body.take(200)}")

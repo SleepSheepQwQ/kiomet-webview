@@ -11,7 +11,15 @@ object InjectedScript {
     var BACKEND = 'http://127.0.0.1:9999';
 
     // ===== Logging =====
-    function log(msg) { console.log('[KB]', msg); }
+    function log(msg) {
+        console.log('[KB]', msg);
+        try {
+            var x = new XMLHttpRequest();
+            x.open('POST', BACKEND + '/log', true);
+            x.setRequestHeader('Content-Type', 'text/plain');
+            x.send(msg);
+        } catch(e) {}
+    }
 
     // ===== WebSocket hook (捕获所有收发数据) =====
     var OrigWS = window.WebSocket;
