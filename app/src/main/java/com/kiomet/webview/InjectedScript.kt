@@ -40,7 +40,7 @@ object InjectedScript {
             } else if (ArrayBuffer.isView(data)) {
                 info.hex = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
             }
-            xhrPost('/data', info);
+            sendToBridge('data', info);
             return origSend(data);
         };
 
@@ -48,7 +48,7 @@ object InjectedScript {
         ws.addEventListener('message', function(e) {
             if (e.data instanceof ArrayBuffer) {
                 var u8 = new Uint8Array(e.data);
-                xhrPost('/data', { dir: 'in', size: u8.length, hex: Array.from(u8.slice(0,64)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join(''), time: Date.now() });
+                sendToBridge('data', { dir: 'in', size: u8.length, hex: Array.from(u8.slice(0,64)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join(''), time: Date.now() });
             }
         });
         return ws;
@@ -66,7 +66,7 @@ object InjectedScript {
             } else if (ArrayBuffer.isView(data)) {
                 info.hex = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
             }
-            xhrPost('/data', info);
+            sendToBridge('data', info);
             return origProtoSend.call(this, data);
         };
     }
@@ -118,25 +118,28 @@ object InjectedScript {
                     var tx = Math.floor((ndx * 5 - m[2]) / m[0]), ty = Math.floor((ndy * 5 - m[5]) / m[4]);
                     result.towerId = { x: tx, y: ty };
                 }
-                xhrPost('/click', result);
+                sendToBridge('click', result);
             });
             log('Canvas hooked');
         };
         check();
     }
 
-    // ===== Bridge HTTP API helper =====
-    function xhrPost(url, data) {
+    // ===== Bridge API (native JS bridge preferred, then HTTP fallback) =====
+    function sendToBridge(type, data) {
+        var json = JSON.stringify(data);
+        // Native bridge (no CORS issues, always available)
+        if (window.KB && window.KB.send) {
+            try { window.KB.send(type, json); return; } catch(e) {}
+        }
+        // HTTP fallback
         try {
             var x = new XMLHttpRequest();
-            x.open('POST', BACKEND + url, true);
+            x.open('POST', BACKEND + '/' + type, true);
             x.setRequestHeader('Content-Type', 'application/json');
-            x.send(JSON.stringify(data));
+            x.send(json);
         } catch(e) {
-            // Fallback: sendBeacon 不受CORS限制
-            try {
-                navigator.sendBeacon(BACKEND + url, JSON.stringify(data));
-            } catch(e2) {}
+            try { navigator.sendBeacon(BACKEND + '/' + type, json); } catch(e2) {}
         }
     }
 

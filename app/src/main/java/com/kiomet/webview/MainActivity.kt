@@ -92,15 +92,16 @@ class MainActivity : AppCompatActivity() {
         s.builtInZoomControls = true
         s.displayZoomControls = false
 
+        // 原生JS桥 - 不受CORS限制，跨页面持久化
+        webView.addJavascriptInterface(BridgeInterface(), "KB")
+
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
-                // 页面开始加载时就注入，比onPageFinished早
-                injectWithRetry(view, port, 20, 500)
+                injectWithRetry(view, port, 30, 500)
             }
             override fun onPageFinished(view: WebView, url: String) {
-                // 页面加载完后也注入一次
-                injectWithRetry(view, port, 5, 300)
+                injectWithRetry(view, port, 10, 300)
                 Log.i("KB", "Page loaded: $url")
             }
         }
@@ -136,5 +137,20 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         bridgeServer?.stop()
         super.onDestroy()
+    }
+
+    inner class BridgeInterface {
+        @android.webkit.JavascriptInterface
+        fun send(type: String, json: String) {
+            Log.i("KB", "JS-$type: ${json.take(200)}")
+            bridgeServer?.let { bs ->
+                when (type) {
+                    "data" -> bs.addMessage(json)
+                    "click" -> bs.addClick(json)
+                    "log" -> Log.i("KB", "JS-log: $json")
+                    "ping" -> Log.i("KB", "JS-ping: $json")
+                }
+            }
+        }
     }
 }

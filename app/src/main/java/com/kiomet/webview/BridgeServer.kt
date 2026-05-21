@@ -9,10 +9,13 @@ import java.util.concurrent.Executors
 
 class BridgeServer(val port: Int) {
     private var serverSocket: ServerSocket? = null
-    private var running = false
-    private val messages = CopyOnWriteArrayList<String>()
-    private val clicks = CopyOnWriteArrayList<String>()
+    @Volatile var running = false
+    val messages = CopyOnWriteArrayList<String>()
+    val clicks = CopyOnWriteArrayList<String>()
     private val executor = Executors.newCachedThreadPool()
+
+    fun addMessage(json: String) { messages.add(json) }
+    fun addClick(json: String) { clicks.add(json) }
 
     fun start() {
         if (running) return
