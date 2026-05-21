@@ -35,13 +35,15 @@ object InjectedScript {
         var origSend = ws.send.bind(ws);
         ws.send = function(data) {
             var info = { dir: 'out', size: data.byteLength || data.length || 0, time: Date.now() };
-            if (data instanceof ArrayBuffer) {
-                info.hex = Array.from(new Uint8Array(data)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-            } else if (ArrayBuffer.isView(data)) {
-                info.hex = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-            }
+            try {
+                if (data instanceof ArrayBuffer) {
+                    info.hex = Array.from(new Uint8Array(data)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+                } else if (ArrayBuffer.isView(data)) {
+                    info.hex = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+                }
+            } catch(e) {}
             sendToBridge('data', info);
-            return origSend(data);
+            try { return origSend(data); } catch(e) {}
         };
 
         // Hook message
@@ -61,13 +63,15 @@ object InjectedScript {
         var origProtoSend = OrigWS.prototype.send;
         OrigWS.prototype.send = function(data) {
             var info = { dir: 'out', size: data.byteLength || data.length || 0, time: Date.now() };
-            if (data instanceof ArrayBuffer) {
-                info.hex = Array.from(new Uint8Array(data)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-            } else if (ArrayBuffer.isView(data)) {
-                info.hex = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-            }
+            try {
+                if (data instanceof ArrayBuffer) {
+                    info.hex = Array.from(new Uint8Array(data)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+                } else if (ArrayBuffer.isView(data)) {
+                    info.hex = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+                }
+            } catch(e) {}
             sendToBridge('data', info);
-            return origProtoSend.call(this, data);
+            try { return origProtoSend.call(this, data); } catch(e) {}
         };
     }
 
