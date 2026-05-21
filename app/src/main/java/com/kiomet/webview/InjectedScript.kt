@@ -113,11 +113,11 @@ object InjectedScript {
             window.__kbCanvasHooked = true;
             
             function handler(e) {
+                e.stopPropagation();
                 var t = e.changedTouches ? e.changedTouches[0] : null;
-                if (!t && e.targetTouches) t = e.targetTouches[0];
                 if (!t) t = e;
                 var r = canvas.getBoundingClientRect();
-                var sx = t.clientX - r.left, sy = t.clientY - r.top;
+                var sx = (t.clientX || 0) - r.left, sy = (t.clientY || 0) - r.top;
                 var result = { screenX: sx, screenY: sy, canvasW: canvas.width, canvasH: canvas.height, time: Date.now() };
                 if (cameraMatrix) {
                     var m = cameraMatrix;
@@ -128,9 +128,10 @@ object InjectedScript {
                 sendToBridge('click', result);
             }
             
-            canvas.addEventListener('click', handler);
-            canvas.addEventListener('touchend', handler);
-            canvas.addEventListener('pointerdown', handler);
+            // 使用capture阶段监听，优先于游戏自身的处理
+            canvas.addEventListener('pointerdown', handler, { capture: true, passive: true });
+            canvas.addEventListener('touchend', handler, { capture: true, passive: true });
+            canvas.addEventListener('click', handler, { capture: true, passive: true });
         }
         check();
     }
