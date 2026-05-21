@@ -79,6 +79,7 @@ object InjectedScript {
             if (!proto) return;
             var orig = proto.uniformMatrix3fv;
             if (!orig) return;
+            window.__kbCameraHooked = true;
             proto.uniformMatrix3fv = function(loc, trans, data) {
                 if (data && data.length === 9) cameraMatrix = Array.from(data);
                 return orig.call(this, loc, trans, data);
@@ -103,12 +104,15 @@ object InjectedScript {
 
     // ===== Canvas click → TowerId =====
     function hookClicks() {
-        var check = function() {
+        function check() {
             var canvas = document.getElementById('canvas') || document.querySelector('canvas');
-            if (!canvas) { setTimeout(check, 1000); return; }
-            canvas.addEventListener('touchend', function(e) {
-                var t = e.changedTouches[0];
-                if (!t) return;
+            if (!canvas) { setTimeout(check, 500); return; }
+            window.__kbCanvasHooked = true;
+            
+            function handler(e) {
+                var t = e.changedTouches ? e.changedTouches[0] : null;
+                if (!t && e.targetTouches) t = e.targetTouches[0];
+                if (!t) t = e;
                 var r = canvas.getBoundingClientRect();
                 var sx = t.clientX - r.left, sy = t.clientY - r.top;
                 var result = { screenX: sx, screenY: sy, canvasW: canvas.width, canvasH: canvas.height, time: Date.now() };
@@ -119,9 +123,12 @@ object InjectedScript {
                     result.towerId = { x: tx, y: ty };
                 }
                 sendToBridge('click', result);
-            });
-            log('Canvas hooked');
-        };
+            }
+            
+            canvas.addEventListener('click', handler);
+            canvas.addEventListener('touchend', handler);
+            canvas.addEventListener('pointerdown', handler);
+        }
         check();
     }
 
@@ -147,6 +154,11 @@ object InjectedScript {
     hookWASM();
     hookWebGL();
     hookClicks();
+    // Keep retrying hooks periodically (canvas might be created later)
+    setInterval(function() {
+        if (!window.__kbCanvasHooked) hookClicks();
+        if (!window.__kbCameraHooked) hookWebGL();
+    }, 2000);
     log('Bridge injected');
 })();
 """
