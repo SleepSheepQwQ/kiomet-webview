@@ -26,25 +26,42 @@ object InjectedScript {
 
     // ===== WebSocket hook (捕获所有收发数据) =====
     var OrigWS = window.WebSocket;
+    
+    // Prototype send hook: 用Object.defineProperty绕过非writable限制
+    try {
+        var _origProtoSend = OrigWS.prototype.send;
+        Object.defineProperty(OrigWS.prototype, 'send', {
+            configurable: true,
+            enumerable: true,
+            writable: true,
+            value: function(data) {
+                var info = { dir: 'out', size: data.byteLength || data.length || 0, time: Date.now() };
+                try {
+                    if (data instanceof ArrayBuffer) {
+                        info.hex = Array.from(new Uint8Array(data)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+                    } else if (ArrayBuffer.isView(data)) {
+                        info.hex = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+                    }
+                } catch(e) {}
+                sendToBridge('data', info);
+                return _origProtoSend.call(this, data);
+            }
+        });
+    } catch(e) { log('send proto hook err: ' + (e.message||'')); }
+
+    // Constructor hook (用于message监听和实例send覆盖)
     window.WebSocket = function(url, protocols) {
         var ws = new OrigWS(url, protocols);
         if (typeof url !== 'string' || url.indexOf('kiomet') === -1) return ws;
         log('WS: ' + url);
 
-        // Hook instance send
-        var origSend = ws.send.bind(ws);
-        ws.send = function(data) {
-            var info = { dir: 'out', size: data.byteLength || data.length || 0, time: Date.now() };
-            try {
-                if (data instanceof ArrayBuffer) {
-                    info.hex = Array.from(new Uint8Array(data)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-                } else if (ArrayBuffer.isView(data)) {
-                    info.hex = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-                }
-            } catch(e) {}
-            sendToBridge('data', info);
-            try { return origSend(data); } catch(e) {}
-        };
+        // 实例send覆盖（作为prototype hook的备用）
+        try {
+            var origSend = ws.send.bind(ws);
+            ws.send = function(data) {
+                origSend(data);
+            };
+        } catch(e) {}
 
         // Hook message
         ws.addEventListener('message', function(e) {
@@ -56,24 +73,6 @@ object InjectedScript {
         return ws;
     };
     window.WebSocket.prototype = OrigWS.prototype;
-
-    // Prototype send hook (catches sends from WASM-initiated WebSockets)
-    if (!OrigWS.prototype.__kbHooked) {
-        OrigWS.prototype.__kbHooked = true;
-        var origProtoSend = OrigWS.prototype.send;
-        OrigWS.prototype.send = function(data) {
-            var info = { dir: 'out', size: data.byteLength || data.length || 0, time: Date.now() };
-            try {
-                if (data instanceof ArrayBuffer) {
-                    info.hex = Array.from(new Uint8Array(data)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-                } else if (ArrayBuffer.isView(data)) {
-                    info.hex = Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)).map(function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-                }
-            } catch(e) {}
-            sendToBridge('data', info);
-            try { return origProtoSend.call(this, data); } catch(e) {}
-        };
-    }
 
     // ===== Camera matrix capture (WebGL) =====
     var cameraMatrix = null;
