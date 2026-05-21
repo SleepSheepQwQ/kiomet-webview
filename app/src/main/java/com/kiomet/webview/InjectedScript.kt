@@ -132,7 +132,12 @@ object InjectedScript {
             x.open('POST', BACKEND + url, true);
             x.setRequestHeader('Content-Type', 'application/json');
             x.send(JSON.stringify(data));
-        } catch(e) {}
+        } catch(e) {
+            // Fallback: sendBeacon 不受CORS限制
+            try {
+                navigator.sendBeacon(BACKEND + url, JSON.stringify(data));
+            } catch(e2) {}
+        }
     }
 
     // ===== Init =====

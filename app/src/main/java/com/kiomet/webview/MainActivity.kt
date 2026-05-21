@@ -1,6 +1,8 @@
 package com.kiomet.webview
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.webkit.*
 import android.widget.*
@@ -14,6 +16,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var bridgeServer: BridgeServer? = null
+    private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,10 +36,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         val prefs = getSharedPreferences("bridge", MODE_PRIVATE)
-        var port = prefs.getInt("port", 9999)
+        var port = prefs.getInt("port", 9988)
 
         startBridge(port)
-        setupWebView()
+        setupWebView(port)
         statusBadge.text = ":$port"
         statusBadge.visibility = View.VISIBLE
 
@@ -63,21 +66,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPortDialog(onSet: (Int) -> Unit) {
         val input = EditText(this).apply {
-            setText(getSharedPreferences("bridge", MODE_PRIVATE).getInt("port", 9999).toString())
+            setText(getSharedPreferences("bridge", MODE_PRIVATE).getInt("port", 9988).toString())
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
         AlertDialog.Builder(this)
             .setTitle("Bridge Port")
             .setView(input)
             .setPositiveButton("OK") { _, _ ->
-                val p = input.text.toString().toIntOrNull() ?: 9999
+                val p = input.text.toString().toIntOrNull() ?: 9988
                 onSet(p.coerceIn(1024, 65535))
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun setupWebView() {
+    private fun setupWebView(port: Int) {
         val s = webView.settings
         s.javaScriptEnabled = true
         s.domStorageEnabled = true
@@ -90,10 +93,14 @@ class MainActivity : AppCompatActivity() {
         s.displayZoomControls = false
 
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                // 页面开始加载时就注入，比onPageFinished早
+                injectWithRetry(view, port, 20, 500)
+            }
             override fun onPageFinished(view: WebView, url: String) {
-                val port = bridgeServer?.port ?: 9999
-                val script = InjectedScript.CODE.replace("9999", port.toString())
-                view.evaluateJavascript(script, null)
+                // 页面加载完后也注入一次
+                injectWithRetry(view, port, 5, 300)
                 Log.i("KB", "Page loaded: $url")
             }
         }
@@ -104,6 +111,22 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
         }
+    }
+
+    private fun injectWithRetry(view: WebView, port: Int, attempts: Int, delayMs: Long) {
+        val script = InjectedScript.CODE.replace("9988", port.toString())
+        var remaining = attempts
+        fun retry() {
+            view.evaluateJavascript(script) { result ->
+                if ((result.isNullOrEmpty() || result == "null") && remaining > 0) {
+                    remaining--
+                    handler.postDelayed({ retry() }, delayMs)
+                } else if (result != null && result != "null") {
+                    Log.i("KB", "Script injected OK")
+                }
+            }
+        }
+        retry()
     }
 
     override fun onBackPressed() {
