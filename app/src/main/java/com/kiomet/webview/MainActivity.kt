@@ -3,6 +3,7 @@ package com.kiomet.webview
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.view.View
 import android.webkit.*
 import android.widget.*
@@ -16,10 +17,13 @@ import androidx.core.view.WindowInsetsControllerCompat
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var bridgeServer: BridgeServer? = null
+    private var cdpBridge: CDPBridge? = null
     private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WebView.setWebContentsDebuggingEnabled(true)
+
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.attributes.layoutInDisplayCutoutMode =
             android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
@@ -39,6 +43,7 @@ class MainActivity : AppCompatActivity() {
         var port = prefs.getInt("port", 9988)
 
         startBridge(port)
+        startCDPBridge(port)
         setupWebView(port)
         statusBadge.text = ":$port"
         statusBadge.visibility = View.VISIBLE
@@ -50,7 +55,9 @@ class MainActivity : AppCompatActivity() {
                 port = newPort
                 prefs.edit().putInt("port", port).apply()
                 bridgeServer?.stop()
+                cdpBridge?.stop()
                 startBridge(port)
+                startCDPBridge(port)
                 statusBadge.text = ":$port"
                 webView.reload()
             }
@@ -62,6 +69,12 @@ class MainActivity : AppCompatActivity() {
     private fun startBridge(port: Int) {
         bridgeServer = BridgeServer(port)
         bridgeServer!!.start()
+    }
+
+    private fun startCDPBridge(bridgePort: Int) {
+        val cdp = CDPBridge(bridgePort + 1)
+        cdpBridge = cdp
+        cdp.start()
     }
 
     private fun showPortDialog(onSet: (Int) -> Unit) {
@@ -136,6 +149,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         bridgeServer?.stop()
+        cdpBridge?.stop()
         super.onDestroy()
     }
 
