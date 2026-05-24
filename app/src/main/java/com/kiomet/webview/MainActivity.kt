@@ -26,6 +26,8 @@ class MainActivity : AppCompatActivity() {
         private const val WASM_HOOK = """
 window.__kbMem = null;
 window.__kbExp = null;
+window.__kbTowers = [];
+
 var _ii = WebAssembly.instantiate;
 WebAssembly.instantiate = function(b, i) {
     return _ii.call(this, b, i).then(function(r) {
@@ -50,6 +52,50 @@ if (_iis) {
         });
     };
 }
+
+// Hook the game's WebGL rendering to capture tower draw calls
+var _gl = WebGLRenderingContext.prototype;
+var _unif4fv = _gl.uniform4fv;
+_gl.uniform4fv = function(loc, v) {
+    if (v && v.length >= 4) {
+        var x = v[0], y = v[1], z = v[2];
+        if (Math.abs(x) < 10000 && Math.abs(y) < 10000) {
+            window.__kbLastPos = [x, y, z];
+        }
+    }
+    return _unif4fv.apply(this, arguments);
+};
+var _drawA = _gl.drawArrays;
+_gl.drawArrays = function(mode, first, count) {
+    if (mode === 4 && count > 2 && count < 200 && window.__kbLastPos) {
+        var pos = window.__kbLastPos;
+        var found = false;
+        var arr = window.__kbTowers;
+        for (var i = 0; i < arr.length; i++) {
+            if (Math.abs(arr[i][0] - pos[0]) < 0.01 && Math.abs(arr[i][1] - pos[1]) < 0.01) {
+                found = true; break;
+            }
+        }
+        if (!found && arr.length < 100) {
+            arr.push([pos[0], pos[1], pos[2], Date.now()]);
+        }
+    }
+    window.__kbLastPos = null;
+    return _drawA.apply(this, arguments);
+};
+
+// Hook WebSocket send (now with correct timing)
+var _wsSend = WebSocket.prototype.send;
+Object.defineProperty(WebSocket.prototype, 'send', {
+    configurable: true, writable: true,
+    value: function(data) {
+        if (data && data.byteLength) {
+            var view = new Uint8Array(data);
+            window.__kbLastSend = Array.from(view.slice(0, 32));
+        }
+        return _wsSend.call(this, data);
+    }
+});
 """
     }
 
