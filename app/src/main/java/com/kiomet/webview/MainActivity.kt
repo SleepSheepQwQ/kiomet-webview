@@ -13,12 +13,45 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import java.net.URL
+import java.net.HttpURLConnection
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var bridgeServer: BridgeServer? = null
     private var cdpBridge: CDPBridge? = null
     private val handler = Handler(Looper.getMainLooper())
+
+    companion object {
+        private const val WASM_HOOK = """
+window.__kbMem = null;
+window.__kbExp = null;
+var _ii = WebAssembly.instantiate;
+WebAssembly.instantiate = function(b, i) {
+    return _ii.call(this, b, i).then(function(r) {
+        var inst = r instanceof WebAssembly.Instance ? r : r.instance;
+        if (inst && inst.exports && inst.exports.memory) {
+            window.__kbMem = inst.exports.memory;
+            window.__kbExp = inst.exports;
+        }
+        return r;
+    });
+};
+var _iis = WebAssembly.instantiateStreaming;
+if (_iis) {
+    WebAssembly.instantiateStreaming = function(s, i) {
+        return _iis.call(this, s, i).then(function(r) {
+            var inst = r instanceof WebAssembly.Instance ? r : r.instance;
+            if (inst && inst.exports && inst.exports.memory) {
+                window.__kbMem = inst.exports.memory;
+                window.__kbExp = inst.exports;
+            }
+            return r;
+        });
+    };
+}
+"""
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -116,6 +149,24 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 injectWithRetry(view, port, 10, 300)
                 Log.i("KB", "Page loaded: $url")
+            }
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                val url = request.url.toString()
+                if (url.endsWith("client.js")) {
+                    try {
+                        val conn = URL(url).openConnection() as HttpURLConnection
+                        conn.connectTimeout = 5000
+                        conn.readTimeout = 5000
+                        val original = conn.inputStream.readBytes()
+                        conn.disconnect()
+                        val combined = WASM_HOOK.toByteArray(Charsets.UTF_8) + original
+                        Log.i("KB", "Injected WASM hook into client.js")
+                        return WebResourceResponse("application/javascript", "utf-8", combined.inputStream())
+                    } catch (e: Exception) {
+                        Log.e("KB", "Intercept failed: ${e.message}")
+                    }
+                }
+                return super.shouldInterceptRequest(view, request)
             }
         }
 
