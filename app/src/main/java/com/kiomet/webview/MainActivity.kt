@@ -96,8 +96,7 @@ if (_iis) {
         }
         return _iis.call(this, s, i);
     };
-}"
-        }
+}
 """
 
     override fun onCreate(savedInstanceState: Bundle?) {
