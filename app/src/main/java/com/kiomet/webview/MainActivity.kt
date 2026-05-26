@@ -71,18 +71,36 @@ function _wrapImport(i) {
         if (!m || typeof m !== 'object') return;
         Object.keys(m).forEach(function(fn) {
             if (fn.indexOf('__wbg_') !== 0) return;
-            var orig = m[fn];
-            m[fn] = function() {
-                try { window.__kbWm.push({f:fn, t:Date.now()}); } catch(e) {}
-                return orig.apply(this, arguments);
-            };
+            if (fn.indexOf('send') > 0 || fn.indexOf('bufferData') > 0 || fn.indexOf('clientX') > 0 || fn.indexOf('clientY') > 0 || fn.indexOf('texImage') > 0 || fn.indexOf('texSubImage') > 0 || fn.indexOf('drawArrays') > 0 || fn.indexOf('drawElements') > 0 || fn.indexOf('uniform') > 0) {
+                var orig = m[fn];
+                m[fn] = function() {
+                    try {
+                        var info = {f:fn, t:Date.now()};
+                        var last = arguments.length - 1;
+                        if (last >= 0) {
+                            var v = arguments[last];
+                            if (v && v.byteLength) {
+                                var u8 = new Uint8Array(v.byteLength > 64 ? v.slice(0, 64) : v);
+                                info.d = Array.from(u8).map(function(x){return ('0'+x.toString(16)).slice(-2)}).join('');
+                                info.n = v.byteLength;
+                            } else if (v && v.length) {
+                                info.v = Array.from(v).slice(0, 16);
+                            } else if (typeof v === 'number') {
+                                info.v = v;
+                            }
+                        }
+                        window.__kbWm.push(info);
+                    } catch(e) {}
+                    return orig.apply(this, arguments);
+                };
+            }
         });
     });
 }
 var _ii = WebAssembly.instantiate;
-WebAssembly.instantiate = function(b, i) { _wrapImport(i); return _ii.call(this, b, i); };
+WebAssembly.instantiate = function(b, i) { _wrapImport(i); return _ii.call(this, b, i).then(function(r) { var inst = r instanceof WebAssembly.Instance ? r : r.instance; if (inst && inst.exports) { if (inst.exports.memory) window.__kbMem = inst.exports.memory; window.__kbExp = inst.exports; } return r; }); };
 var _iis = WebAssembly.instantiateStreaming;
-if (_iis) { WebAssembly.instantiateStreaming = function(s, i) { _wrapImport(i); return _iis.call(this, s, i); }; }
+if (_iis) { WebAssembly.instantiateStreaming = function(s, i) { _wrapImport(i); return _iis.call(this, s, i).then(function(r) { var inst = r instanceof WebAssembly.Instance ? r : r.instance; if (inst && inst.exports) { if (inst.exports.memory) window.__kbMem = inst.exports.memory; window.__kbExp = inst.exports; } return r; }); }; }
 
 // Hook WebSocket.send for outgoing command capture
 var _wsSend = WebSocket.prototype.send;
