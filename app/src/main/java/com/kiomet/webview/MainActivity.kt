@@ -27,36 +27,9 @@ class MainActivity : AppCompatActivity() {
 window.__kbMem = null;
 window.__kbExp = null;
 window.__kbTowers = [];
-window.__kbLastPos = null;
 
 var _ii = WebAssembly.instantiate;
 WebAssembly.instantiate = function(b, i) {
-    // Wrap WASM import functions BEFORE instantiation
-    if (i && typeof i === 'object') {
-        Object.keys(i).forEach(function(mod) {
-            var m = i[mod];
-            if (m && typeof m === 'object') {
-                Object.keys(m).forEach(function(fn) {
-                    if (fn.indexOf('__wbg_send_') === 0 || fn.indexOf('__wbg_bufferData_') === 0 || fn.indexOf('__wbg_clientX') === 0 || fn.indexOf('__wbg_clientY') === 0 || fn.indexOf('__wbg_addEventListener_') === 0 || fn.indexOf('__wbg_drawArrays') === 0) {
-                        var orig = m[fn];
-                        m[fn] = function() {
-                            try {
-                                var info = {f:fn};
-                                if ((fn.indexOf('send') >= 0 || fn.indexOf('bufferData') >= 0) && arguments.length > 0 && arguments[arguments.length-1] && arguments[arguments.length-1].byteLength) {
-                                    var v = new Uint8Array(arguments[arguments.length-1]);
-                                    info.d = Array.from(v.slice(0,32)).map(function(x){return x.toString(16).padStart(2,'0')}).join('');
-                                } else if ((fn.indexOf('clientX') >= 0 || fn.indexOf('clientY') >= 0) && arguments.length > 0) {
-                                    info.v = arguments[0];
-                                }
-                                console.log('KB_WM', JSON.stringify(info));
-                            } catch(e) {}
-                            return orig.apply(this, arguments);
-                        };
-                    }
-                });
-            }
-        });
-    }
     return _ii.call(this, b, i).then(function(r) {
         var inst = r instanceof WebAssembly.Instance ? r : r.instance;
         if (inst && inst.exports && inst.exports.memory) {
@@ -66,7 +39,65 @@ WebAssembly.instantiate = function(b, i) {
         return r;
     });
 };
+var _iis = WebAssembly.instantiateStreaming;
+if (_iis) {
+    WebAssembly.instantiateStreaming = function(s, i) {
+        return _iis.call(this, s, i).then(function(r) {
+            var inst = r instanceof WebAssembly.Instance ? r : r.instance;
+            if (inst && inst.exports && inst.exports.memory) {
+                window.__kbMem = inst.exports.memory;
+                window.__kbExp = inst.exports;
+            }
+            return r;
+        });
+    };
+}
+
+// Hook the game's WebGL rendering to capture tower draw calls
+var _gl = WebGLRenderingContext.prototype;
+var _unif4fv = _gl.uniform4fv;
+_gl.uniform4fv = function(loc, v) {
+    if (v && v.length >= 4) {
+        var x = v[0], y = v[1], z = v[2];
+        if (Math.abs(x) < 10000 && Math.abs(y) < 10000) {
+            window.__kbLastPos = [x, y, z];
+        }
+    }
+    return _unif4fv.apply(this, arguments);
+};
+var _drawA = _gl.drawArrays;
+_gl.drawArrays = function(mode, first, count) {
+    if (mode === 4 && count > 2 && count < 200 && window.__kbLastPos) {
+        var pos = window.__kbLastPos;
+        var found = false;
+        var arr = window.__kbTowers;
+        for (var i = 0; i < arr.length; i++) {
+            if (Math.abs(arr[i][0] - pos[0]) < 0.01 && Math.abs(arr[i][1] - pos[1]) < 0.01) {
+                found = true; break;
+            }
+        }
+        if (!found && arr.length < 100) {
+            arr.push([pos[0], pos[1], pos[2], Date.now()]);
+        }
+    }
+    window.__kbLastPos = null;
+    return _drawA.apply(this, arguments);
+};
+
+// Hook WebSocket send (now with correct timing)
+var _wsSend = WebSocket.prototype.send;
+Object.defineProperty(WebSocket.prototype, 'send', {
+    configurable: true, writable: true,
+    value: function(data) {
+        if (data && data.byteLength) {
+            var view = new Uint8Array(data);
+            window.__kbLastSend = Array.from(view.slice(0, 32));
+        }
+        return _wsSend.call(this, data);
+    }
+});
 """
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
