@@ -22,76 +22,76 @@ class MainActivity : AppCompatActivity() {
     private var cdpBridge: CDPBridge? = null
     private val handler = Handler(Looper.getMainLooper())
 
-    companion object {
+companion object {
         private const val WASM_HOOK = """
+window.__kbWm = [];
 window.__kbMem = null;
 window.__kbExp = null;
-window.__kbTowers = [];
 
-var _ii = WebAssembly.instantiate;
-WebAssembly.instantiate = function(b, i) {
-    return _ii.call(this, b, i).then(function(r) {
-        var inst = r instanceof WebAssembly.Instance ? r : r.instance;
-        if (inst && inst.exports && inst.exports.memory) {
-            window.__kbMem = inst.exports.memory;
-            window.__kbExp = inst.exports;
-        }
-        return r;
-    });
-};
-var _iis = WebAssembly.instantiateStreaming;
-if (_iis) {
-    WebAssembly.instantiateStreaming = function(s, i) {
-        return _iis.call(this, s, i).then(function(r) {
-            var inst = r instanceof WebAssembly.Instance ? r : r.instance;
-            if (inst && inst.exports && inst.exports.memory) {
-                window.__kbMem = inst.exports.memory;
-                window.__kbExp = inst.exports;
-            }
-            return r;
+// Patch getContext to intercept WebGL context at creation time
+var _origGC = HTMLCanvasElement.prototype.getContext;
+HTMLCanvasElement.prototype.getContext = function(type) {
+    var ctx = _origGC.apply(this, arguments);
+    if (type.indexOf('webgl') === 0 && ctx && !ctx.__kbPatch) {
+        ctx.__kbPatch = true;
+        // Patch all relevant WebGL methods on the INSTANCE
+        var targets = ['drawArrays','drawElements','texSubImage2D','texImage2D','uniform4fv','uniformMatrix4fv','bufferData','bufferSubData'];
+        targets.forEach(function(name) {
+            var orig = ctx[name];
+            if (!orig) return;
+            ctx[name] = function() {
+                try {
+                    var info = {f:name, t:Date.now()};
+                    if ((name.indexOf('tex') === 0 || name.indexOf('buffer') === 0) && arguments.length > 1 && arguments[arguments.length-1]) {
+                        var data = arguments[arguments.length-1];
+                        if (data.byteLength) {
+                            var view = new Uint8Array(data.byteLength > 128 ? data.slice(0,128) : data);
+                            info.d = Array.from(view).map(function(x){return ('0'+x.toString(16)).slice(-2)}).join('');
+                            info.n = data.byteLength;
+                        } else if (data.length) {
+                            info.v = Array.from(data).slice(0,16);
+                        }
+                    } else if (name.indexOf('uniform') === 0 && arguments.length > 1) {
+                        info.v = Array.from(arguments[1] || []).slice(0,8);
+                    }
+                    window.__kbWm.push(info);
+                } catch(e) {}
+                return orig.apply(this, arguments);
+            };
         });
-    };
+    }
+    return ctx;
+};
+
+// Backup: wrap WASM import functions at instantiation time
+function _wrapImport(i) {
+    if (!i || typeof i !== 'object') return;
+    Object.keys(i).forEach(function(mn) {
+        var m = i[mn];
+        if (!m || typeof m !== 'object') return;
+        Object.keys(m).forEach(function(fn) {
+            if (fn.indexOf('__wbg_') !== 0) return;
+            var orig = m[fn];
+            m[fn] = function() {
+                try { window.__kbWm.push({f:fn, t:Date.now()}); } catch(e) {}
+                return orig.apply(this, arguments);
+            };
+        });
+    });
 }
+var _ii = WebAssembly.instantiate;
+WebAssembly.instantiate = function(b, i) { _wrapImport(i); return _ii.call(this, b, i); };
+var _iis = WebAssembly.instantiateStreaming;
+if (_iis) { WebAssembly.instantiateStreaming = function(s, i) { _wrapImport(i); return _iis.call(this, s, i); }; }
 
-// Hook the game's WebGL rendering to capture tower draw calls
-var _gl = WebGLRenderingContext.prototype;
-var _unif4fv = _gl.uniform4fv;
-_gl.uniform4fv = function(loc, v) {
-    if (v && v.length >= 4) {
-        var x = v[0], y = v[1], z = v[2];
-        if (Math.abs(x) < 10000 && Math.abs(y) < 10000) {
-            window.__kbLastPos = [x, y, z];
-        }
-    }
-    return _unif4fv.apply(this, arguments);
-};
-var _drawA = _gl.drawArrays;
-_gl.drawArrays = function(mode, first, count) {
-    if (mode === 4 && count > 2 && count < 200 && window.__kbLastPos) {
-        var pos = window.__kbLastPos;
-        var found = false;
-        var arr = window.__kbTowers;
-        for (var i = 0; i < arr.length; i++) {
-            if (Math.abs(arr[i][0] - pos[0]) < 0.01 && Math.abs(arr[i][1] - pos[1]) < 0.01) {
-                found = true; break;
-            }
-        }
-        if (!found && arr.length < 100) {
-            arr.push([pos[0], pos[1], pos[2], Date.now()]);
-        }
-    }
-    window.__kbLastPos = null;
-    return _drawA.apply(this, arguments);
-};
-
-// Hook WebSocket send (now with correct timing)
+// Hook WebSocket.send for outgoing command capture
 var _wsSend = WebSocket.prototype.send;
 Object.defineProperty(WebSocket.prototype, 'send', {
     configurable: true, writable: true,
     value: function(data) {
         if (data && data.byteLength) {
             var view = new Uint8Array(data);
-            window.__kbLastSend = Array.from(view.slice(0, 32));
+            window.__kbWm.push({f:'wsSend', d:Array.from(view).map(function(x){return ('0'+x.toString(16)).slice(-2)}).join(''), n:data.byteLength, t:Date.now()});
         }
         return _wsSend.call(this, data);
     }
