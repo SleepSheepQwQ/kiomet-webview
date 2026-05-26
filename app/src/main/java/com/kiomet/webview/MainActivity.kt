@@ -66,37 +66,6 @@ WebAssembly.instantiate = function(b, i) {
         return r;
     });
 };
-var _iis = WebAssembly.instantiateStreaming;
-if (_iis) {
-    WebAssembly.instantiateStreaming = function(s, i) {
-        if (i && typeof i === 'object') {
-            Object.keys(i).forEach(function(mod) {
-                var m = i[mod];
-                if (m && typeof m === 'object') {
-                    Object.keys(m).forEach(function(fn) {
-                        if (fn.indexOf('__wbg_send_') === 0 || fn.indexOf('__wbg_bufferData_') === 0 || fn.indexOf('__wbg_clientX') === 0 || fn.indexOf('__wbg_clientY') === 0 || fn.indexOf('__wbg_addEventListener_') === 0 || fn.indexOf('__wbg_drawArrays') === 0) {
-                            var orig = m[fn];
-                            m[fn] = function() {
-                                try {
-                                    var info = {f:fn};
-                                    if ((fn.indexOf('send') >= 0 || fn.indexOf('bufferData') >= 0) && arguments.length > 0 && arguments[arguments.length-1] && arguments[arguments.length-1].byteLength) {
-                                        var v = new Uint8Array(arguments[arguments.length-1]);
-                                        info.d = Array.from(v.slice(0,32)).map(function(x){return x.toString(16).padStart(2,'0')}).join('');
-                                    } else if ((fn.indexOf('clientX') >= 0 || fn.indexOf('clientY') >= 0) && arguments.length > 0) {
-                                        info.v = arguments[0];
-                                    }
-                                    console.log('KB_WM', JSON.stringify(info));
-                                } catch(e) {}
-                                return orig.apply(this, arguments);
-                            };
-                        }
-                    });
-                }
-            });
-        }
-        return _iis.call(this, s, i);
-    };
-}
 """
 
     override fun onCreate(savedInstanceState: Bundle?) {
