@@ -115,8 +115,73 @@ Object.defineProperty(WebSocket.prototype, 'send', {
     }
 });
 
-// Coordinate calculator: runs at draw time to calculate tower screen positions
 window.__kbTowerPositions = [];
+
+var _origInst = WebAssembly.instantiate;
+WebAssembly.instantiate = function(b, i) {
+  if (i && i['./client_bg.js']) {
+    i['./client_bg.js'].__hook_frame = function() {
+      try {
+        var w = window.__kbFrameData;
+        if(!w || !w.mat || !w.texPixels) return;
+        var a=w.mat[0], g=w.mat[6], e=w.mat[4], h=w.mat[7];
+        var vpW=1218, vpH=1950, dpr=3;
+        var camWX=-g/a, camWY=-h/e;
+        var gridCX=Math.round(camWX/5), gridCY=Math.round(camWY/5);
+        var pixCnt=Math.floor(w.texPixels.length/4);
+        var texW=Math.round(Math.sqrt(pixCnt)), texH=Math.ceil(pixCnt/texW);
+        var startX=gridCX-Math.floor(texW/2), startY=gridCY-Math.floor(texH/2);
+        var towers=[];
+        for(var i=0;i<pixCnt;i++){
+          var off=i*4;
+          if(w.texPixels[off]===0x7f) continue;
+          var id=w.texPixels[off+2], vis=w.texPixels[off+3];
+          if(vis!==255) continue;
+          var txx=i%texW, txy=Math.floor(i/texW);
+          var wx=(startX+txx)*5+2.5, wy=(startY+txy)*5+2.5;
+          var scrX=((a*wx+g)+1)*0.5/dpr*vpW+3, scrY=((e*wy+h)+1)*0.5/dpr*vpH+3;
+          towers.push({s:[Math.round(scrX),Math.round(scrY)],id:id});
+        }
+        window.__kbTowerPositions = towers;
+      } catch(e){}
+    };
+  }
+  return _origInst.call(this, b, i);
+};
+var _iis = WebAssembly.instantiateStreaming;
+if (_iis) {
+  WebAssembly.instantiateStreaming = function(s, i) {
+    if (i && i['./client_bg.js']) {
+      i['./client_bg.js'].__hook_frame = function() {
+        try {
+          var w = window.__kbFrameData;
+          if(!w || !w.mat || !w.texPixels) return;
+          var a=w.mat[0], g=w.mat[6], e=w.mat[4], h=w.mat[7];
+          var vpW=1218, vpH=1950, dpr=3;
+          var camWX=-g/a, camWY=-h/e;
+          var gridCX=Math.round(camWX/5), gridCY=Math.round(camWY/5);
+          var pixCnt=Math.floor(w.texPixels.length/4);
+          var texW=Math.round(Math.sqrt(pixCnt)), texH=Math.ceil(pixCnt/texW);
+          var startX=gridCX-Math.floor(texW/2), startY=gridCY-Math.floor(texH/2);
+          var towers=[];
+          for(var i=0;i<pixCnt;i++){
+            var off=i*4;
+            if(w.texPixels[off]===0x7f) continue;
+            var id=w.texPixels[off+2], vis=w.texPixels[off+3];
+            if(vis!==255) continue;
+            var txx=i%texW, txy=Math.floor(i/texW);
+            var wx=(startX+txx)*5+2.5, wy=(startY+txy)*5+2.5;
+            var scrX=((a*wx+g)+1)*0.5/dpr*vpW+3, scrY=((e*wy+h)+1)*0.5/dpr*vpH+3;
+            towers.push({s:[Math.round(scrX),Math.round(scrY)],id:id});
+          }
+          window.__kbTowerPositions = towers;
+        } catch(e){}
+      };
+    }
+    return _iis.call(this, s, i);
+  };
+}
+
 (function(){
   var canvas = document.querySelector('canvas');
   if(!canvas) return;
