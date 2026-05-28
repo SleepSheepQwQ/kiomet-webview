@@ -15,7 +15,19 @@ android {
         versionName = "1.13"
     }
 
+    signingConfigs {
+        create("fixed") {
+            storeFile = file("keystore.p12")
+            storePassword = "android123"
+            keyAlias = "kiomet-debug"
+            keyPassword = "android123"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("fixed")
+        }
         release {
             isMinifyEnabled = false
         }
