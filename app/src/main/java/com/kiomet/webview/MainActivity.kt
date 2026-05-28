@@ -115,73 +115,7 @@ Object.defineProperty(WebSocket.prototype, 'send', {
     }
 });
 
-window.__kbTowerPositions = [];
-
-var _origInst = WebAssembly.instantiate;
-WebAssembly.instantiate = function(b, i) {
-  if (i && i['./client_bg.js']) {
-    i['./client_bg.js'].__hook_frame = function() {
-      try {
-        var w = window.__kbFrameData;
-        if(!w || !w.mat || !w.texPixels) return;
-        var a=w.mat[0], g=w.mat[6], e=w.mat[4], h=w.mat[7];
-        var vpW=1218, vpH=1950, dpr=3;
-        var camWX=-g/a, camWY=-h/e;
-        var gridCX=Math.round(camWX/5), gridCY=Math.round(camWY/5);
-        var pixCnt=Math.floor(w.texPixels.length/4);
-        var texW=Math.round(Math.sqrt(pixCnt)), texH=Math.ceil(pixCnt/texW);
-        var startX=gridCX-Math.floor(texW/2), startY=gridCY-Math.floor(texH/2);
-        var towers=[];
-        for(var i=0;i<pixCnt;i++){
-          var off=i*4;
-          if(w.texPixels[off]===0x7f) continue;
-          var id=w.texPixels[off+2], vis=w.texPixels[off+3];
-          if(vis!==255) continue;
-          var txx=i%texW, txy=Math.floor(i/texW);
-          var wx=(startX+txx)*5+2.5, wy=(startY+txy)*5+2.5;
-          var scrX=((a*wx+g)+1)*0.5/dpr*vpW+3, scrY=((e*wy+h)+1)*0.5/dpr*vpH+3;
-          towers.push({s:[Math.round(scrX),Math.round(scrY)],id:id});
-        }
-        window.__kbTowerPositions = towers;
-      } catch(e){}
-    };
-  }
-  return _origInst.call(this, b, i);
-};
-var _iis = WebAssembly.instantiateStreaming;
-if (_iis) {
-  WebAssembly.instantiateStreaming = function(s, i) {
-    if (i && i['./client_bg.js']) {
-      i['./client_bg.js'].__hook_frame = function() {
-        try {
-          var w = window.__kbFrameData;
-          if(!w || !w.mat || !w.texPixels) return;
-          var a=w.mat[0], g=w.mat[6], e=w.mat[4], h=w.mat[7];
-          var vpW=1218, vpH=1950, dpr=3;
-          var camWX=-g/a, camWY=-h/e;
-          var gridCX=Math.round(camWX/5), gridCY=Math.round(camWY/5);
-          var pixCnt=Math.floor(w.texPixels.length/4);
-          var texW=Math.round(Math.sqrt(pixCnt)), texH=Math.ceil(pixCnt/texW);
-          var startX=gridCX-Math.floor(texW/2), startY=gridCY-Math.floor(texH/2);
-          var towers=[];
-          for(var i=0;i<pixCnt;i++){
-            var off=i*4;
-            if(w.texPixels[off]===0x7f) continue;
-            var id=w.texPixels[off+2], vis=w.texPixels[off+3];
-            if(vis!==255) continue;
-            var txx=i%texW, txy=Math.floor(i/texW);
-            var wx=(startX+txx)*5+2.5, wy=(startY+txy)*5+2.5;
-            var scrX=((a*wx+g)+1)*0.5/dpr*vpW+3, scrY=((e*wy+h)+1)*0.5/dpr*vpH+3;
-            towers.push({s:[Math.round(scrX),Math.round(scrY)],id:id});
-          }
-          window.__kbTowerPositions = towers;
-        } catch(e){}
-      };
-    }
-    return _iis.call(this, s, i);
-  };
-}
-
+// Coordinate calculator: capture matrix + texture data at draw time, no WASM patching needed
 (function(){
   var canvas = document.querySelector('canvas');
   if(!canvas) return;
@@ -189,57 +123,23 @@ if (_iis) {
   if(!gl) return;
   var _mat = null;
   var _texData = null;
-  var _texN = 0;
-  window.__kbTowerPositions = [];
-  
-  var _origInst = WebAssembly.instantiate;
-  WebAssembly.instantiate = function(b, i) {
-    if (i && i['./client_bg.js']) {
-      i['./client_bg.js'].__hook_frame = function() {
-        try {
-          var a=_mat[0], g=_mat[6], e=_mat[4], h=_mat[7];
-          var vpW=1218, vpH=1950, dpr=3;
-          var camWX=-g/a, camWY=-h/e;
-          var gridCX=Math.round(camWX/5), gridCY=Math.round(camWY/5);
-          if(!_texData) return;
-          var pixCnt=Math.floor(_texData.length/4);
-          var texW=Math.round(Math.sqrt(pixCnt)), texH=Math.ceil(pixCnt/texW);
-          var startX=gridCX-Math.floor(texW/2), startY=gridCY-Math.floor(texH/2);
-          var towers=[];
-          for(var i=0;i<pixCnt;i++){
-            var off=i*4;
-            if(_texData[off]===0x7f) continue;
-            var id=_texData[off+2], vis=_texData[off+3];
-            if(vis!==255) continue;
-            var txx=i%texW, txy=Math.floor(i/texW);
-            var wx=(startX+txx)*5+2.5, wy=(startY+txy)*5+2.5;
-            var scrX=((a*wx+g)+1)*0.5/dpr*vpW+3, scrY=((e*wy+h)+1)*0.5/dpr*vpH+3;
-            towers.push({s:[Math.round(scrX),Math.round(scrY)],id:id});
-          }
-          window.__kbTowerPositions = towers;
-        } catch(e){}
-      };
-    }
-    return _origInst.call(this, b, i);
-  };
-  
+
   var _origUni = gl.uniformMatrix3fv;
   gl.uniformMatrix3fv = function(loc, trans, val) {
     if(val && val.length === 9) _mat = Array.from(val);
     return _origUni.apply(this, arguments);
   };
-  
+
   var _origTex = gl.texSubImage2D;
   gl.texSubImage2D = function() {
     var px = arguments[8];
     if(px && px.byteLength) {
       var u8 = new Uint8Array(px.byteLength > 2048 ? px.slice(0, 2048) : px);
       _texData = Array.from(u8);
-      _texN = px.byteLength;
     }
     return _origTex.apply(this, arguments);
   };
-  
+
   var _origDraw = gl.drawElements;
   gl.drawElements = function(mode, count, type, offset) {
     if(_mat && _texData) {
@@ -384,15 +284,7 @@ if (_iis) {
                         Log.e("KB", "Intercept failed: ${e.message}")
                     }
                 }
-                if (url.endsWith("client_bg.wasm")) {
-                    try {
-                        val wasmStream = assets.open("kiomet_bg.wasm")
-                        Log.i("KB", "Serving patched WASM (${wasmStream.available()} bytes)")
-                        return WebResourceResponse("application/wasm", null, wasmStream)
-                    } catch (e: Exception) {
-                        Log.e("KB", "WASM intercept failed: ${e.message}")
-                    }
-                }
+                
                 return super.shouldInterceptRequest(view, request)
             }
         }
