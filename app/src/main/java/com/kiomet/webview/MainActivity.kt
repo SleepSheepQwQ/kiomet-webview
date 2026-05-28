@@ -125,6 +125,38 @@ window.__kbTowerPositions = [];
   var _mat = null;
   var _texData = null;
   var _texN = 0;
+  window.__kbTowerPositions = [];
+  
+  var _origInst = WebAssembly.instantiate;
+  WebAssembly.instantiate = function(b, i) {
+    if (i && i['./client_bg.js']) {
+      i['./client_bg.js'].__hook_frame = function() {
+        try {
+          var a=_mat[0], g=_mat[6], e=_mat[4], h=_mat[7];
+          var vpW=1218, vpH=1950, dpr=3;
+          var camWX=-g/a, camWY=-h/e;
+          var gridCX=Math.round(camWX/5), gridCY=Math.round(camWY/5);
+          if(!_texData) return;
+          var pixCnt=Math.floor(_texData.length/4);
+          var texW=Math.round(Math.sqrt(pixCnt)), texH=Math.ceil(pixCnt/texW);
+          var startX=gridCX-Math.floor(texW/2), startY=gridCY-Math.floor(texH/2);
+          var towers=[];
+          for(var i=0;i<pixCnt;i++){
+            var off=i*4;
+            if(_texData[off]===0x7f) continue;
+            var id=_texData[off+2], vis=_texData[off+3];
+            if(vis!==255) continue;
+            var txx=i%texW, txy=Math.floor(i/texW);
+            var wx=(startX+txx)*5+2.5, wy=(startY+txy)*5+2.5;
+            var scrX=((a*wx+g)+1)*0.5/dpr*vpW+3, scrY=((e*wy+h)+1)*0.5/dpr*vpH+3;
+            towers.push({s:[Math.round(scrX),Math.round(scrY)],id:id});
+          }
+          window.__kbTowerPositions = towers;
+        } catch(e){}
+      };
+    }
+    return _origInst.call(this, b, i);
+  };
   
   var _origUni = gl.uniformMatrix3fv;
   gl.uniformMatrix3fv = function(loc, trans, val) {
