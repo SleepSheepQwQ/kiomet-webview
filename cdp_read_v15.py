@@ -75,7 +75,24 @@ if pos and pos not in ("[]", "null"):
 else:
     print("No towers found", flush=True)
 
-# 2. Read raw WebSocket messages
+# 1b. Run WASM memory scanner to get tower types
+mem_result = js(5, "JSON.stringify(window.__kbScanMemoryForTypes ? __kbScanMemoryForTypes() : null)")
+print("\n=== WASM MEMORY SCAN (tower types) ===", flush=True)
+if mem_result and mem_result not in ("[]", "null"):
+    mem_towers = json.loads(mem_result)
+    found = [t for t in mem_towers if t["type"] >= 0]
+    print(f"Scanned {len(mem_towers)} towers, {len(found)} had type info", flush=True)
+    for t in found:
+        tname = TOWER_TYPES[t["type"]] if t["type"] < len(TOWER_TYPES) else "???"
+        print(f"  grid({t['w'][0]},{t['w'][1]}) screen({t['s'][0]},{t['s'][1]}) type={t['type']}({tname}) offset=0x{t['offset']:x}", flush=True)
+else:
+    print("Memory scan returned no results (memory not available or tower data not in expected format)", flush=True)
+    # Also try reading __kbTowerPositionsWithTypes if already populated
+    wt = js(5, "JSON.stringify(window.__kbTowerPositionsWithTypes || null)")
+    if wt and wt not in ("[]", "null"):
+        wt_data = json.loads(wt)
+        found = [t for t in wt_data if t["type"] >= 0]
+        print(f"  Found {len(found)} tower types from __kbTowerPositionsWithTypes", flush=True)
 raw_msg = js(3, "JSON.stringify(window.__kbRawMessages)")
 print("\n=== RAW WS MESSAGES ===", flush=True)
 if raw_msg and raw_msg not in ("[]", "null"):

@@ -150,6 +150,46 @@ WebSocket.prototype.addEventListener = function(type, handler) {
 
 window.__kbCallLog = [];
 
+// WASM memory scanner: search linear memory for known tower grid positions, read tower_type from adjacent bytes
+window.__kbScanMemoryForTypes = function() {
+  if (!window.__kbMem || !window.__kbTowerPositions || window.__kbTowerPositions.length === 0) return null;
+  var mem = window.__kbMem;
+  var towers = window.__kbTowerPositions;
+  var maxBytes = Math.min(mem.buffer.byteLength, 64 * 1024 * 1024); // first 64MB
+  var arr = new Uint8Array(mem.buffer, 0, maxBytes);
+  var enriched = [];
+
+  for (var t = 0; t < towers.length; t++) {
+    var tw = towers[t];
+    if (!tw.w) continue;
+    var gx = tw.w[0] & 0xffff, gy = tw.w[1] & 0xffff;
+    var found = null;
+    // Scan for (gx, gy) as u16 little-endian pair
+    for (var off = 0; off < maxBytes - 6; off += 1) {
+      var x = arr[off] | (arr[off + 1] << 8);
+      var y = arr[off + 2] | (arr[off + 3] << 8);
+      if (x === gx && y === gy) {
+        // Check next 4 bytes for tower_type (u8, value 0-26)
+        for (var d = 4; d < 8; d++) {
+          var tv = arr[off + d];
+          if (tv >= 0 && tv < 27) {
+            found = {offset: off, type: tv, dist: d};
+            break;
+          }
+        }
+        if (found) break;
+      }
+    }
+    enriched.push({
+      s: tw.s, w: tw.w, id: tw.id,
+      type: found ? found.type : -1,
+      offset: found ? found.offset : -1
+    });
+  }
+  window.__kbTowerPositionsWithTypes = enriched;
+  return enriched;
+};
+
 (function(){
   var canvas = document.querySelector('canvas');
   if(!canvas) return;
