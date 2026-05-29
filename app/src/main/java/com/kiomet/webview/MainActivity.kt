@@ -63,7 +63,7 @@ HTMLCanvasElement.prototype.getContext = function(type) {
     return ctx;
 };
 
-// Backup: wrap WASM import functions at instantiation time
+var _callCount = 0;
 function _wrapImport(i) {
     if (!i || typeof i !== 'object') return;
     Object.keys(i).forEach(function(mn) {
@@ -71,10 +71,12 @@ function _wrapImport(i) {
         if (!m || typeof m !== 'object') return;
         Object.keys(m).forEach(function(fn) {
             if (fn.indexOf('__wbg_') !== 0) return;
-            if (fn.indexOf('send') > 0 || fn.indexOf('bufferData') > 0 || fn.indexOf('clientX') > 0 || fn.indexOf('clientY') > 0 || fn.indexOf('texImage') > 0 || fn.indexOf('texSubImage') > 0 || fn.indexOf('drawArrays') > 0 || fn.indexOf('drawElements') > 0 || fn.indexOf('uniform') > 0) {
-                var orig = m[fn];
-                m[fn] = function() {
-                    try {
+            var orig = m[fn];
+            var isRender = fn.indexOf('send') > 0 || fn.indexOf('bufferData') > 0 || fn.indexOf('clientX') > 0 || fn.indexOf('clientY') > 0 || fn.indexOf('texImage') > 0 || fn.indexOf('texSubImage') > 0 || fn.indexOf('drawArrays') > 0 || fn.indexOf('drawElements') > 0 || fn.indexOf('uniform') > 0;
+            var isExplorer = !isRender && fn.indexOf('drawElements_') < 0;
+            m[fn] = function() {
+                try {
+                    if (isRender) {
                         var info = {f:fn, t:Date.now()};
                         var last = arguments.length - 1;
                         if (last >= 0) {
@@ -90,10 +92,21 @@ function _wrapImport(i) {
                             }
                         }
                         window.__kbWm.push(info);
-                    } catch(e) {}
-                    return orig.apply(this, arguments);
-                };
-            }
+                    }
+                    if (isExplorer && _callCount < 5000) {
+                        _callCount++;
+                        var arg0 = arguments[0];
+                        var log = {n:fn, t:Date.now()};
+                        if (typeof arg0 === 'number') log.v0 = arg0;
+                        else if (arg0 && arg0.byteLength) {
+                            var u8 = new Uint8Array(arg0.byteLength > 32 ? arg0.slice(0,32) : arg0);
+                            log.d0 = Array.from(u8).map(function(x){return ('0'+x.toString(16)).slice(-2)}).join('');
+                        }
+                        window.__kbCallLog.push(log);
+                    }
+                } catch(e) {}
+                return orig.apply(this, arguments);
+            };
         });
     });
 }
@@ -102,7 +115,6 @@ WebAssembly.instantiate = function(b, i) { _wrapImport(i); return _ii.call(this,
 var _iis = WebAssembly.instantiateStreaming;
 if (_iis) { WebAssembly.instantiateStreaming = function(s, i) { _wrapImport(i); return _iis.call(this, s, i).then(function(r) { var inst = r instanceof WebAssembly.Instance ? r : r.instance; if (inst && inst.exports) { if (inst.exports.memory) window.__kbMem = inst.exports.memory; window.__kbExp = inst.exports; } return r; }); }; }
 
-// Hook WebSocket.send for outgoing command capture
 var _wsSend = WebSocket.prototype.send;
 Object.defineProperty(WebSocket.prototype, 'send', {
     configurable: true, writable: true,
@@ -115,7 +127,29 @@ Object.defineProperty(WebSocket.prototype, 'send', {
     }
 });
 
-// Coordinate calculator: capture matrix + texture data at draw time, no WASM patching needed
+window.__kbRawMessages = [];
+var _origAddEventListener = WebSocket.prototype.addEventListener;
+WebSocket.prototype.addEventListener = function(type, handler) {
+    if (type === 'message') {
+        var _origHandler = handler;
+        handler = function(event) {
+            if (event.data && event.data.byteLength) {
+                try {
+                    var buf = event.data;
+                    var view = new Uint8Array(buf.byteLength > 4096 ? buf.slice(0, 4096) : buf);
+                    var hex = Array.from(view).map(function(x){return ('0'+x.toString(16)).slice(-2)}).join('');
+                    window.__kbRawMessages.push({d:hex, n:buf.byteLength, t:Date.now()});
+                    if (window.__kbRawMessages.length > 10) window.__kbRawMessages.shift();
+                } catch(e){}
+            }
+            return _origHandler.apply(this, arguments);
+        };
+    }
+    return _origAddEventListener.call(this, type, handler);
+};
+
+window.__kbCallLog = [];
+
 (function(){
   var canvas = document.querySelector('canvas');
   if(!canvas) return;
