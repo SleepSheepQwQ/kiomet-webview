@@ -236,7 +236,7 @@ window.__kbScanMemoryForTypes = function() {
   var _origDraw = gl.drawElements;
   gl.drawElements = function(mode, count, type, offset) {
     if(_mat && _texData) {
-      try {
+try {
         var a=_mat[0], g=_mat[6], e=_mat[4], h=_mat[7];
         var vpW=1218, vpH=1950, dpr=3;
         var camWX=-g/a, camWY=-h/e;
@@ -245,6 +245,7 @@ window.__kbScanMemoryForTypes = function() {
         var texW=Math.round(Math.sqrt(pixCnt)), texH=Math.ceil(pixCnt/texW);
         var startX=gridCX-Math.floor(texW/2), startY=gridCY-Math.floor(texH/2);
         var towers=[];
+        var typeCache = window.__kbTowerPositionsWithTypes || [];
         for(var i=0;i<pixCnt;i++){
           var off=i*4;
           if(_texData[off]===0x7f) continue;
@@ -253,7 +254,15 @@ window.__kbScanMemoryForTypes = function() {
           var txx=i%texW, txy=Math.floor(i/texW);
           var wx=(startX+txx)*5+2.5, wy=(startY+txy)*5+2.5;
           var scrX=((a*wx+g)+1)*0.5/dpr*vpW+3, scrY=((e*wy+h)+1)*0.5/dpr*vpH+3;
-          towers.push({s:[Math.round(scrX),Math.round(scrY)],id:id,w:[Math.round(wx),Math.round(wy)]});
+          var gridMatch = null;
+          for (var ci = 0; ci < typeCache.length; ci++) {
+            var ct = typeCache[ci];
+            if (ct.w && ct.w[0] === Math.round(wx) && ct.w[1] === Math.round(wy) && ct.type >= 0) {
+              gridMatch = ct.type;
+              break;
+            }
+          }
+          towers.push({s:[Math.round(scrX),Math.round(scrY)],id:id,w:[Math.round(wx),Math.round(wy)],type:gridMatch !== null ? gridMatch : -1});
         }
         window.__kbTowerPositions = towers;
       } catch(e) {}
