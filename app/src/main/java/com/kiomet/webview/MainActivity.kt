@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
 
 companion object {
         private const val WASM_HOOK = """
+var _kbCap = function() { if (window.__kbWm.length > 100000) window.__kbWm.splice(0, 50000); };
 window.__kbWm = [];
 window.__kbMem = null;
 window.__kbExp = null;
@@ -134,6 +135,7 @@ HTMLCanvasElement.prototype.getContext = function(type) {
                             info.v = Array.from(arguments[1] || []).slice(0,8);
                         }
                         window.__kbWm.push(info);
+                        _kbCap();
                     } catch(e) {}
                     return o.apply(this, arguments);
                 };
@@ -172,6 +174,7 @@ function _wrapImport(i) {
                             }
                         }
                         window.__kbWm.push(info);
+                        _kbCap();
                     }
                     if (isExplorer && _callCount < 5000) {
                         _callCount++;
@@ -242,39 +245,32 @@ window.__kbScanMemoryForTypes = function() {
   var arr = new Uint8Array(mem.buffer, 0, maxBytes);
   var enriched = [];
   var CHUNK_TOWERS = 256;
-  var strideCandidates = [16, 20, 24, 28, 32, 36, 40, 48, 56, 64];
+  var TYPE_OFFSET = 4;
+  var stride = 16;
+  var chunkBytes = stride * CHUNK_TOWERS;
 
   for (var ti = 0; ti < towers.length; ti++) {
     var tw = towers[ti];
     if (!tw.w) continue;
     var gx = tw.w[0], gy = tw.w[1];
-    var cx = (gx / 16) | 0, cy = (gy / 16) | 0;
     var localIdx = (gy % 16) * 16 + (gx % 16);
     var found = null;
 
-    for (var si = 0; si < strideCandidates.length && !found; si++) {
-      var stride = strideCandidates[si];
-      var chunkBytes = stride * CHUNK_TOWERS;
-      if (chunkBytes > maxBytes) continue;
-
-      for (var chunkStart = 0; chunkStart + chunkBytes <= maxBytes; chunkStart += 4) {
-        var valid = 0;
-        var typeSum = 0;
-        var minType = 99, maxType = 0;
-        for (var j = 0; j < CHUNK_TOWERS; j++) {
-          var off = chunkStart + j * stride;
-          var disc = arr[off];
-          if (disc !== 0 && disc !== 1) { valid = -1; break; }
-          var tv = arr[off + 1];
-          if (tv >= 0 && tv < 27) { valid++; typeSum += tv; if (tv < minType) minType = tv; if (tv > maxType) maxType = tv; }
-          else { valid = -1; break; }
-        }
-        if (valid > 200) {
-          var tv = arr[chunkStart + localIdx * stride + 1];
-          if (tv >= 0 && tv < 27) {
-            found = {offset: chunkStart + localIdx * stride, type: tv, stride: stride, chunkValid: valid};
-            break;
-          }
+    for (var chunkStart = 0; chunkStart + chunkBytes <= maxBytes; chunkStart += chunkBytes) {
+      var valid = 0;
+      for (var j = 0; j < CHUNK_TOWERS; j++) {
+        var off = chunkStart + j * stride;
+        var disc = arr[off];
+        if (disc !== 0 && disc !== 1) { valid = -1; break; }
+        var tv = arr[off + TYPE_OFFSET];
+        if (tv >= 0 && tv < 27) valid++;
+        else { valid = -1; break; }
+      }
+      if (valid > 200) {
+        var tv = arr[chunkStart + localIdx * stride + TYPE_OFFSET];
+        if (tv >= 0 && tv < 27) {
+          found = {offset: chunkStart + localIdx * stride + TYPE_OFFSET, type: tv, stride: stride, chunkValid: valid};
+          break;
         }
       }
     }
