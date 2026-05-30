@@ -262,9 +262,11 @@ window.__kbScanMemoryForTypes = function() {
         var off = chunkStart + j * stride;
         var disc = arr[off];
         if (disc !== 0 && disc !== 1) { valid = -1; break; }
-        var tv = arr[off + TYPE_OFFSET];
-        if (tv >= 0 && tv < 27) valid++;
-        else { valid = -1; break; }
+        if (disc === 1) {
+          var tv = arr[off + TYPE_OFFSET];
+          if (tv >= 0 && tv < 27) valid++;
+          else { valid = -1; break; }
+        }
       }
       if (valid > 200) {
         var tv = arr[chunkStart + localIdx * stride + TYPE_OFFSET];
