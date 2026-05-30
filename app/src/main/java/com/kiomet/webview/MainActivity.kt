@@ -238,32 +238,50 @@ window.__kbCallLog = [];
 // World is 32x32 chunks = 1024 chunks total.
 // World grid 512x512, each cell = 5 world units.
 window.__kbScanMemoryForTypes = function() {
-  if (!window.__kbMem || !window.__kbTowerPositions || window.__kbTowerPositions.length === 0) return null;
-  var mem = window.__kbMem;
-  var towers = window.__kbTowerPositions;
-  var max = Math.min(mem.buffer.byteLength, 64 * 1024 * 1024);
-  var arr = new Uint8Array(mem.buffer, 0, max);
-  var enriched = [];
-  var stride = 16, TYPE_OFFSET = 4;
+  var mem = window.__kbMem; if(!mem||!window.__kbTowerPositions)return null;
+  var max=Math.min(mem.buffer.byteLength,64*1024*1024);
+  var arr=new Uint8Array(mem.buffer,0,max);
+  var tw=window.__kbTowerPositions;
+  var CHUNK_BYTES=4096, stride=16, TYPE_OFFSET=4;
 
-  for (var ti = 0; ti < towers.length; ti++) {
-    var tw = towers[ti];
-    if (!tw.w) continue;
-    var gx = tw.w[0], gy = tw.w[1];
-    var localIdx = ((gy % 16) + 16) % 16 * 16 + ((gx % 16) + 16) % 16;
-    var foundType = -1, foundOff = -1;
-
-    for (var base = 0; base + stride * 256 <= max; base += stride) {
-      var off = base + localIdx * stride;
-      if (arr[off] !== 1) continue;
-      var tv = arr[off + TYPE_OFFSET];
-      if (tv >= 0 && tv < 27) { foundType = tv; foundOff = off; break; }
-    }
-
-    enriched.push({s: tw.s, w: tw.w, id: tw.id, type: foundType, stride: stride, offset: foundOff});
+  // Group known towers by chunk
+  var byChunk={};
+  for(var i=0;i<tw.length;i++){
+    if(!tw[i].w)continue;
+    var gx=tw[i].w[0],gy=tw[i].w[1];
+    var cid=(gx/16|0)+','+(gy/16|0);
+    var li=((gy%16)+16)%16*16+((gx%16)+16)%16;
+    if(!byChunk[cid])byChunk[cid]={li:[]};
+    byChunk[cid].li.push({idx:i,li:li});
   }
-  window.__kbTowerPositionsWithTypes = enriched;
-  return enriched;
+
+  // Scan at 4KB-aligned positions (Box alloc boundaries)
+  for(var base=0;base+CHUNK_BYTES<=max;base+=4096){
+    // Quick validation: at least one Some entry with valid type
+    var hasSome=false;
+    for(var j=0;j<256;j++){
+      if(arr[base+j*stride]===1){var tv=arr[base+j*stride+TYPE_OFFSET];if(tv>=0&&tv<27){hasSome=true;break}}
+    }
+    if(!hasSome)continue;
+
+    // For each known chunk, try to match towers at their localIdx
+    for(var cid in byChunk){
+      var entries=byChunk[cid].li;
+      for(var ei=0;ei<entries.length;ei++){
+        var e=entries[ei];
+        var off=base+e.li*stride;
+        if(arr[off]===1){
+          var tv=arr[off+TYPE_OFFSET];
+          if(tv>=0&&tv<27&&tw[e.idx].type!==tv){tw[e.idx].type=tv}
+        }
+      }
+    }
+  }
+
+  var res=[];
+  for(var i=0;i<tw.length;i++){res.push({s:tw[i].s,w:tw[i].w,id:tw[i].id,type:tw[i].type})}
+  window.__kbTowerPositionsWithTypes=res;
+  return res;
 };
 
 (function(){
