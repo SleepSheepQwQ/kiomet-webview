@@ -28,36 +28,116 @@ window.__kbWm = [];
 window.__kbMem = null;
 window.__kbExp = null;
 
-// Patch getContext to intercept WebGL context at creation time
+// Patch getContext to intercept WebGL context + install coordinate calculator
 var _origGC = HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext = function(type) {
     var ctx = _origGC.apply(this, arguments);
     if (type.indexOf('webgl') === 0 && ctx && !ctx.__kbPatch) {
         ctx.__kbPatch = true;
-        // Patch all relevant WebGL methods on the INSTANCE
+        // Coordinate calculator state (exposed globally for CDP debugging)
+        var _mat = null;
+        var _texData = null;
+        window.__kbDebugState = {mat: null, texLen: 0, drawCount: 0, lastError: null};
+
+        var _u3Orig = ctx.uniformMatrix3fv;
+        if (_u3Orig) {
+            ctx.uniformMatrix3fv = function(loc, trans, val) {
+                if (val && val.length === 9) { _mat = Array.from(val); window.__kbDebugState.mat = _mat; }
+                return _u3Orig.apply(this, arguments);
+            };
+        }
+
+        var _u4Orig = ctx.uniformMatrix4fv;
+        if (_u4Orig) {
+            ctx.uniformMatrix4fv = function(loc, trans, val) {
+                if (val && val.length === 16) {
+                    // Extract 3x3 from 4x4
+                    _mat = [val[0],val[1],val[2], val[4],val[5],val[6], val[8],val[9],val[10]];
+                    window.__kbDebugState.mat = _mat;
+                }
+                return _u4Orig.apply(this, arguments);
+            };
+        }
+
+        var _tOrig = ctx.texSubImage2D;
+        if (_tOrig) {
+            ctx.texSubImage2D = function() {
+                var px = arguments[8];
+                if (px && px.byteLength) {
+                    var u8 = new Uint8Array(px.byteLength > 2048 ? px.slice(0, 2048) : px);
+                    _texData = Array.from(u8);
+                    window.__kbDebugState.texLen = _texData.length;
+                }
+                return _tOrig.apply(this, arguments);
+            };
+        }
+
+        var _dOrig = ctx.drawElements;
+        if (_dOrig) {
+            ctx.drawElements = function(mode, count, type, offset) {
+                if (_mat && _texData && _texData.length > 10) {
+                    try {
+                        window.__kbDebugState.drawCount++;
+                        var a=_mat[0], g=_mat[6], e=_mat[4], h=_mat[7];
+                        var vpW=1218, vpH=1950, dpr=3;
+                        var camWX=-g/a, camWY=-h/e;
+                        var gridCX=Math.round(camWX/5), gridCY=Math.round(camWY/5);
+                        var pixCnt=Math.floor(_texData.length/4);
+                        var texW=Math.round(Math.sqrt(pixCnt)), texH=Math.ceil(pixCnt/texW);
+                        var startX=gridCX-Math.floor(texW/2), startY=gridCY-Math.floor(texH/2);
+                        var towers=[];
+                        var typeCache = window.__kbTowerPositionsWithTypes || [];
+                        for(var i=0;i<pixCnt;i++){
+                          var off=i*4;
+                          if(_texData[off]===0x7f) continue;
+                          var id=_texData[off+2], vis=_texData[off+3];
+                          if(vis!==255) continue;
+                          var txx=i%texW, txy=Math.floor(i/texW);
+                          var wx=(startX+txx)*5+2.5, wy=(startY+txy)*5+2.5;
+                          var scrX=((a*wx+g)+1)*0.5/dpr*vpW+3, scrY=((e*wy+h)+1)*0.5/dpr*vpH+3;
+                          var gridMatch = null;
+                          for (var ci = 0; ci < typeCache.length; ci++) {
+                            var ct = typeCache[ci];
+                            if (ct.w && ct.w[0] === Math.round(wx) && ct.w[1] === Math.round(wy) && ct.type >= 0) {
+                              gridMatch = ct.type;
+                              break;
+                            }
+                          }
+                          towers.push({s:[Math.round(scrX),Math.round(scrY)],id:id,w:[Math.round(wx),Math.round(wy)],type:gridMatch !== null ? gridMatch : -1});
+                        }
+                        if (towers.length > 0) window.__kbTowerPositions = towers;
+                    } catch(e) { window.__kbDebugState.lastError = e.message; }
+                }
+                return _dOrig.apply(this, arguments);
+            };
+        }
+
+        // Log all WebGL calls to __kbWm
         var targets = ['drawArrays','drawElements','texSubImage2D','texImage2D','uniform4fv','uniformMatrix4fv','bufferData','bufferSubData'];
         targets.forEach(function(name) {
             var orig = ctx[name];
             if (!orig) return;
-            ctx[name] = function() {
-                try {
-                    var info = {f:name, t:Date.now()};
-                    if ((name.indexOf('tex') === 0 || name.indexOf('buffer') === 0) && arguments.length > 1 && arguments[arguments.length-1]) {
-                        var data = arguments[arguments.length-1];
-                        if (data.byteLength) {
-                            var view = new Uint8Array(data.byteLength > 128 ? data.slice(0,128) : data);
-                            info.d = Array.from(view).map(function(x){return ('0'+x.toString(16)).slice(-2)}).join('');
-                            info.n = data.byteLength;
-                        } else if (data.length) {
-                            info.v = Array.from(data).slice(0,16);
+            ctx[name] = (function(n, o) {
+                return function() {
+                    try {
+                        var info = {f:n, t:Date.now()};
+                        if ((n.indexOf('tex') === 0 || n.indexOf('buffer') === 0) && arguments.length > 1 && arguments[arguments.length-1]) {
+                            var data = arguments[arguments.length-1];
+                            if (data.byteLength) {
+                                var view = new Uint8Array(data.byteLength > 128 ? data.slice(0,128) : data);
+                                info.d = Array.from(view).map(function(x){return ('0'+x.toString(16)).slice(-2)}).join('');
+                                info.n = data.byteLength;
+                            } else if (data.length) {
+                                info.v = Array.from(data).slice(0,16);
+                            }
+                        } else if (n.indexOf('uniform') === 0 && arguments.length > 1) {
+                            info.v = Array.from(arguments[1] || []).slice(0,8);
                         }
-                    } else if (name.indexOf('uniform') === 0 && arguments.length > 1) {
-                        info.v = Array.from(arguments[1] || []).slice(0,8);
-                    }
-                    window.__kbWm.push(info);
-                } catch(e) {}
-                return orig.apply(this, arguments);
-            };
+                        window.__kbWm.push(info);
+                    } catch(e) {}
+                    return o.apply(this, arguments);
+                };
+            })(name, orig);
         });
     }
     return ctx;
