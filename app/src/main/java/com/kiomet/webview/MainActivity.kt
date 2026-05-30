@@ -241,47 +241,26 @@ window.__kbScanMemoryForTypes = function() {
   if (!window.__kbMem || !window.__kbTowerPositions || window.__kbTowerPositions.length === 0) return null;
   var mem = window.__kbMem;
   var towers = window.__kbTowerPositions;
-  var maxBytes = Math.min(mem.buffer.byteLength, 64 * 1024 * 1024);
-  var arr = new Uint8Array(mem.buffer, 0, maxBytes);
+  var max = Math.min(mem.buffer.byteLength, 64 * 1024 * 1024);
+  var arr = new Uint8Array(mem.buffer, 0, max);
   var enriched = [];
-  var CHUNK_TOWERS = 256;
-  var TYPE_OFFSET = 4;
-  var stride = 16;
-  var chunkBytes = stride * CHUNK_TOWERS;
+  var stride = 16, TYPE_OFFSET = 4;
 
   for (var ti = 0; ti < towers.length; ti++) {
     var tw = towers[ti];
     if (!tw.w) continue;
     var gx = tw.w[0], gy = tw.w[1];
-    var localIdx = (gy % 16) * 16 + (gx % 16);
-    var found = null;
+    var localIdx = ((gy % 16) + 16) % 16 * 16 + ((gx % 16) + 16) % 16;
+    var foundType = -1, foundOff = -1;
 
-    for (var chunkStart = 0; chunkStart + chunkBytes <= maxBytes; chunkStart += chunkBytes) {
-      var valid = 0;
-      for (var j = 0; j < CHUNK_TOWERS; j++) {
-        var off = chunkStart + j * stride;
-        var disc = arr[off];
-        if (disc !== 0 && disc !== 1) { valid = -1; break; }
-        if (disc === 1) {
-          var tv = arr[off + TYPE_OFFSET];
-          if (tv >= 0 && tv < 27) valid++;
-          else { valid = -1; break; }
-        }
-      }
-      if (valid > 200) {
-        var tv = arr[chunkStart + localIdx * stride + TYPE_OFFSET];
-        if (tv >= 0 && tv < 27) {
-          found = {offset: chunkStart + localIdx * stride + TYPE_OFFSET, type: tv, stride: stride, chunkValid: valid};
-          break;
-        }
-      }
+    for (var base = 0; base + stride * 256 <= max; base += stride) {
+      var off = base + localIdx * stride;
+      if (arr[off] !== 1) continue;
+      var tv = arr[off + TYPE_OFFSET];
+      if (tv >= 0 && tv < 27) { foundType = tv; foundOff = off; break; }
     }
-    enriched.push({
-      s: tw.s, w: tw.w, id: tw.id,
-      type: found ? found.type : -1,
-      stride: found ? found.stride : 0,
-      offset: found ? found.offset : -1
-    });
+
+    enriched.push({s: tw.s, w: tw.w, id: tw.id, type: foundType, stride: stride, offset: foundOff});
   }
   window.__kbTowerPositionsWithTypes = enriched;
   return enriched;
