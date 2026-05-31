@@ -238,38 +238,48 @@ window.__kbCallLog = [];
 // World is 32x32 chunks = 1024 chunks total.
 // World grid 512x512, each cell = 5 world units.
 window.__kbScanMemoryForTypes = function() {
-  var mem = window.__kbMem; if(!mem||!window.__kbTowerPositions)return null;
+  var mem=window.__kbMem;if(!mem||!window.__kbTowerPositions)return null;
   var max=Math.min(mem.buffer.byteLength,8*1024*1024);
   var arr=new Uint8Array(mem.buffer,0,max);
   var tw=window.__kbTowerPositions;
-  var stride=56,TYPE_OFF=52;
+  var stride=48,TYPE_OFF=25;
   var playerEntries=[];
 
-  // Scan stride=56 for real player-owned towers
   for(var base=0;base+stride<=max;base+=stride){
     if(arr[base]!==1)continue;
     var pid=arr[base+4]|(arr[base+5]<<8);
     if(pid!==1)continue;
     var tv=arr[base+TYPE_OFF];
     if(tv<0||tv>=27)continue;
-    // Filter out hash table entries: check inbound_forces.ptr
     var ptr=arr[base+4]|(arr[base+5]<<8)|(arr[base+6]<<16)|(arr[base+7]<<24);
-    if(ptr===1)continue; // hash entry marker
-    playerEntries.push({base:base,type:tv,ptr:ptr});
+    if(ptr===1)continue;
+    var sig='';
+    for(var k=0;k<12;k++)sig+=','+arr[base+k];
+    playerEntries.push({sig:sig,type:tv,base:base,ptr:ptr});
   }
 
-  // Assign types to towers: for each texture-detected tower with id=1,
-  // find a matching memory entry (best effort - try the correct stride position)
+  // Deduplicate by signature
+  var seen={};
+  for(var i=0;i<playerEntries.length;i++){
+    var e=playerEntries[i];
+    if(!seen[e.sig])seen[e.sig]={type:e.type,count:0};
+    seen[e.sig].count++;
+  }
+
+  // Assign types to texture-detected towers
   for(var i=0;i<tw.length;i++){
     tw[i].type=-1;
     if(tw[i].id!==1||!tw[i].w)continue;
-    // Try to find by localIdx within stride=56 blocks  
     var gx=tw[i].w[0],gy=tw[i].w[1];
     var li=((gy%16)+16)%16*16+((gx%16)+16)%16;
-    for(var ei=0;ei<playerEntries.length;ei++){
-      var e=playerEntries[ei];
-      var blockIdx=(e.base/stride)&0xff;
-      if(blockIdx===li){tw[i].type=e.type;playerEntries.splice(ei,1);break}
+    for(var s in seen){
+      var ct=seen[s];
+      // Use unique entries (count<3) as real towers
+      if(ct.count<3){
+        tw[i].type=ct.type;
+        delete seen[s];
+        break;
+      }
     }
   }
 
