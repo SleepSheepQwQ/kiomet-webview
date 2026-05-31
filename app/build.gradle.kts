@@ -11,8 +11,8 @@ android {
         applicationId = "com.kiomet.webview"
         minSdk = 24
         targetSdk = 35
-        versionCode = 24
-        versionName = "1.23"
+        versionCode = 25
+        versionName = "1.24"
     }
 
     signingConfigs {
