@@ -496,7 +496,18 @@ try {
                         conn.readTimeout = 5000
                         val original = conn.inputStream.readBytes()
                         conn.disconnect()
-                        val combined = WASM_HOOK.toByteArray(Charsets.UTF_8) + original
+                        var hook = WASM_HOOK
+                        // Try loading hook from external file for hot-update
+                        try {
+                            val extHook = java.io.File("/sdcard/kiomet/hook.js")
+                            if (extHook.exists()) {
+                                hook = extHook.readText()
+                                Log.i("KB", "Loaded hook from /sdcard/kiomet/hook.js")
+                            }
+                        } catch (e: Exception) {
+                            Log.i("KB", "No external hook file, using embedded")
+                        }
+                        val combined = hook.toByteArray(Charsets.UTF_8) + original
                         Log.i("KB", "Injected WASM hook into client.js")
                         return WebResourceResponse("application/javascript", "utf-8", combined.inputStream())
                     } catch (e: Exception) {
