@@ -36,9 +36,11 @@ HTMLCanvasElement.prototype.getContext = function(type) {
     if (type.indexOf('webgl') === 0 && ctx && !ctx.__kbPatch) {
         ctx.__kbPatch = true;
         // Coordinate calculator state (exposed globally for CDP debugging)
-        var _mat = null;
-        var _texData = null;
-        window.__kbDebugState = {mat: null, texLen: 0, drawCount: 0, lastError: null};
+var _mat = null;
+var _texData = null;
+var _texW = 0;
+var _texH = 0;
+window.__kbDebugState = {mat: null, texLen: 0, drawCount: 0, texDim: [0,0], lastError: null};
 
         var _u3Orig = ctx.uniformMatrix3fv;
         if (_u3Orig) {
@@ -60,18 +62,21 @@ HTMLCanvasElement.prototype.getContext = function(type) {
             };
         }
 
-        var _tOrig = ctx.texSubImage2D;
-        if (_tOrig) {
-            ctx.texSubImage2D = function() {
-                var px = arguments[8];
-                if (px && px.byteLength) {
-                    var u8 = new Uint8Array(px.byteLength > 2048 ? px.slice(0, 2048) : px);
-                    _texData = Array.from(u8);
-                    window.__kbDebugState.texLen = _texData.length;
-                }
-                return _tOrig.apply(this, arguments);
-            };
+var _tOrig = ctx.texSubImage2D;
+if (_tOrig) {
+    ctx.texSubImage2D = function() {
+        var px = arguments[8];
+        if (px && px.byteLength) {
+            var u8 = new Uint8Array(px.byteLength > 2048 ? px.slice(0, 2048) : px);
+            _texData = Array.from(u8);
+            _texW = arguments[4];
+            _texH = arguments[5];
+            window.__kbDebugState.texLen = _texData.length;
+            window.__kbDebugState.texDim = [_texW, _texH];
         }
+        return _tOrig.apply(this, arguments);
+    };
+}
 
         var _dOrig = ctx.drawElements;
         if (_dOrig) {
@@ -80,11 +85,12 @@ HTMLCanvasElement.prototype.getContext = function(type) {
                     try {
                         window.__kbDebugState.drawCount++;
                         var a=_mat[0], g=_mat[6], e=_mat[4], h=_mat[7];
-                        var vpW=1218, vpH=1950, dpr=3;
+                        var vpW=1218, vpH=1950;
                         var camWX=-g/a, camWY=-h/e;
                         var gridCX=Math.round(camWX/5), gridCY=Math.round(camWY/5);
                         var pixCnt=Math.floor(_texData.length/4);
-                        var texW=Math.round(Math.sqrt(pixCnt)), texH=Math.ceil(pixCnt/texW);
+                        var texW = _texW > 0 ? _texW : Math.round(Math.sqrt(pixCnt));
+                        var texH = _texH > 0 ? _texH : Math.ceil(pixCnt/texW);
                         var startX=gridCX-Math.floor(texW/2), startY=gridCY-Math.floor(texH/2);
                         var towers=[];
                         var typeCache = window.__kbTowerPositionsWithTypes || [];
@@ -95,7 +101,11 @@ HTMLCanvasElement.prototype.getContext = function(type) {
                           if(vis!==255) continue;
                           var txx=i%texW, txy=Math.floor(i/texW);
                           var wx=(startX+txx)*5+2.5, wy=(startY+txy)*5+2.5;
-                          var scrX=((a*wx+g)+1)*0.5/dpr*vpW+3, scrY=((e*wy+h)+1)*0.5/dpr*vpH+3;
+                          // NDC: ndc_x = a*wx+g, ndc_y = e*wy+h
+                          // Screen CSS pixel (y-inverted): (1 - ndc_y) * 0.5 * vpH
+                          var ndcX = a*wx+g, ndcY = e*wy+h;
+                          var scrX = (ndcX + 1) * 0.5 * vpW + 3;
+                          var scrY = (1 - ndcY) * 0.5 * vpH + 3;
                           var gridMatch = null;
                           for (var ci = 0; ci < typeCache.length; ci++) {
                             var ct = typeCache[ci];
