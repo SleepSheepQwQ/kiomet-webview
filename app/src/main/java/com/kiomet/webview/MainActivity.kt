@@ -68,13 +68,40 @@ if (_tOrig) {
         var px = arguments[8];
         if (px && px.byteLength) {
             var u8 = new Uint8Array(px.byteLength > 2048 ? px.slice(0, 2048) : px);
-            _texData = Array.from(u8);
-            _texW = arguments[4];
-            _texH = arguments[5];
-            window.__kbDebugState.texLen = _texData.length;
-            window.__kbDebugState.texDim = [_texW, _texH];
+            // Check for tower texture pattern (0x7f sentinel)
+            for (var k = 0; k < u8.length; k += 4) {
+                if (u8[k] === 0x7f) {
+                    _texData = Array.from(u8);
+                    _texW = arguments[4];
+                    _texH = arguments[5];
+                    window.__kbDebugState.texLen = _texData.length;
+                    window.__kbDebugState.texDim = [_texW, _texH];
+                    break;
+                }
+            }
         }
         return _tOrig.apply(this, arguments);
+    };
+}
+
+var _iOrig = ctx.texImage2D;
+if (_iOrig) {
+    ctx.texImage2D = function() {
+        var px = arguments[8];
+        if (px && px.byteLength) {
+            var u8 = new Uint8Array(px.byteLength > 2048 ? px.slice(0, 2048) : px);
+            for (var k = 0; k < u8.length; k += 4) {
+                if (u8[k] === 0x7f) {
+                    _texData = Array.from(u8);
+                    _texW = arguments[3];
+                    _texH = arguments[4];
+                    window.__kbDebugState.texLen = _texData.length;
+                    window.__kbDebugState.texDim = [_texW, _texH];
+                    break;
+                }
+            }
+        }
+        return _iOrig.apply(this, arguments);
     };
 }
 
