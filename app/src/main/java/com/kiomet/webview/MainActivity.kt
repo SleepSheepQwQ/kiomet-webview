@@ -50,17 +50,17 @@ window.__kbDebugState = {mat: null, texLen: 0, drawCount: 0, texDim: [0,0], last
             };
         }
 
-        var _u4Orig = ctx.uniformMatrix4fv;
-        if (_u4Orig) {
-            ctx.uniformMatrix4fv = function(loc, trans, val) {
-                if (val && val.length === 16) {
-                    // Extract 3x3 from 4x4
-                    _mat = [val[0],val[1],val[2], val[4],val[5],val[6], val[8],val[9],val[10]];
-                    window.__kbDebugState.mat = _mat;
-                }
-                return _u4Orig.apply(this, arguments);
-            };
+var _u4Orig = ctx.uniformMatrix4fv;
+if (_u4Orig) {
+    ctx.uniformMatrix4fv = function(loc, trans, val) {
+        if (val && val.length === 16) {
+            // 4x4 column-major: [a,0,0,0, 0,e,0,0, 0,0,1,0, tx,ty,0,1]
+            _mat = [val[0],0,0, 0,val[5],0, val[12],val[13],1];
+            window.__kbDebugState.mat = _mat;
         }
+        return _u4Orig.apply(this, arguments);
+    };
+}
 
 var _tOrig = ctx.texSubImage2D;
 if (_tOrig) {
